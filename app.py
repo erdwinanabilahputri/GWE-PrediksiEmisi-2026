@@ -8,7 +8,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import joblib
 import pickle
 import os
 import warnings
@@ -24,7 +23,7 @@ st.set_page_config(
 )
 
 # ============================================
-# FOTO DI SIDEBAR
+# SIDEBAR - FOTO & NAVIGASI
 # ============================================
 try:
     st.sidebar.image('foto profil.jpeg', width=150)
@@ -35,9 +34,6 @@ st.sidebar.markdown("### ERDWINA NABILAH PUTRI")
 st.sidebar.caption("GWE 2026 Participant")
 st.sidebar.markdown("---")
 
-# ============================================
-# TITLE DI SIDEBAR
-# ============================================
 st.sidebar.title("🌍 Navigation")
 page = st.sidebar.radio(
     "Go to",
@@ -47,56 +43,35 @@ st.sidebar.markdown("---")
 st.sidebar.caption("GWE 2026 Data Science Challenge")
 
 # ============================================
-# LOAD MODEL & DATA - VERSION ANTI ERROR
+# LOAD MODEL & DATA
 # ============================================
 @st.cache_resource
-def load_artifacts():
-    """Load model dengan fallback method jika terjadi error"""
+def load_model():
+    """Load model dari folder models/"""
     try:
         # Cek folder models
         if not os.path.exists('models'):
             st.error("❌ Folder 'models' tidak ditemukan!")
-            return None, None, None
+            return None, None
         
-        # Load model - coba joblib dulu, kalo error pake pickle
-        model = None
-        try:
-            model = joblib.load('models/model_pipeline.pkl')
-        except Exception as e:
-            st.warning(f"Joblib error: {e}")
-            st.info("Mencoba load dengan pickle...")
-            try:
-                with open('models/model_pipeline.pkl', 'rb') as f:
-                    model = pickle.load(f)
-            except Exception as e2:
-                st.error(f"❌ Gagal load model: {e2}")
-                return None, None, None
-        
-        # Load preprocessor
-        preprocessor = None
-        try:
-            preprocessor = joblib.load('models/preprocessor.pkl')
-        except:
-            try:
-                with open('models/preprocessor.pkl', 'rb') as f:
-                    preprocessor = pickle.load(f)
-            except:
-                preprocessor = None
+        # Load model
+        with open('models/model.pkl', 'rb') as f:
+            model = pickle.load(f)
         
         # Load feature names
-        feature_names = None
         try:
-            with open('models/feature_names.pkl', 'rb') as f:
-                feature_names = pickle.load(f)
+            with open('models/features.pkl', 'rb') as f:
+                features = pickle.load(f)
         except:
-            feature_names = None
+            features = None
         
         st.success("✅ Model berhasil dimuat!")
-        return model, preprocessor, feature_names
+        return model, features
         
     except Exception as e:
         st.error(f"❌ Error loading model: {e}")
-        return None, None, None
+        st.info("💡 Pastikan file model ada di folder 'models/'")
+        return None, None
 
 @st.cache_data
 def load_data():
@@ -112,7 +87,7 @@ def load_data():
         return None
 
 # Load semua artifacts
-model, preprocessor, feature_names = load_artifacts()
+model, features = load_model()
 df = load_data()
 
 # ============================================
@@ -309,6 +284,7 @@ elif page == "🔮 Prediction":
                     
                 except Exception as e:
                     st.error(f"❌ Error saat prediksi: {e}")
+                    st.info("💡 Pastikan semua input sudah diisi dengan benar.")
 
 # ============================================
 # PAGE 4: DOCUMENTATION
