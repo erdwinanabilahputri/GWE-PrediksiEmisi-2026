@@ -1,5 +1,6 @@
 # ============================================
-# STREAMLIT APP - VERSION DENGAN PREPROCESSOR
+# STREAMLIT APP - GWE 2026
+# Forecasting Emisi Karbon Perusahaan Energi Global
 # ============================================
 
 import streamlit as st
@@ -22,7 +23,7 @@ st.set_page_config(
 )
 
 # ============================================
-# SIDEBAR
+# SIDEBAR - FOTO & NAVIGASI
 # ============================================
 try:
     st.sidebar.image('foto profil.jpeg', width=150)
@@ -42,38 +43,87 @@ st.sidebar.markdown("---")
 st.sidebar.caption("🌍 GWE 2026")
 
 # ============================================
-# LOAD MODEL & PREPROCESSOR
+# LOAD MODEL & PREPROCESSOR - DENGAN FALLBACK
 # ============================================
 @st.cache_resource
 def load_artifacts():
-    """Load model dan preprocessor"""
+    """Load model dengan multiple methods untuk menghindari error _loss"""
     try:
         if not os.path.exists('models'):
             st.error("❌ Folder 'models' tidak ditemukan!")
             return None, None
         
-        # Load model
-        with open('models/model.pkl', 'rb') as f:
-            model = pickle.load(f)
+        model = None
+        preprocessor = None
         
-        # Load preprocessor
-        with open('models/preprocessor.pkl', 'rb') as f:
-            preprocessor = pickle.load(f)
+        # ============================================
+        # METHOD 1: Coba pickle (standar)
+        # ============================================
+        try:
+            with open('models/model.pkl', 'rb') as f:
+                model = pickle.load(f)
+            with open('models/preprocessor.pkl', 'rb') as f:
+                preprocessor = pickle.load(f)
+            st.success("✅ Model & preprocessor loaded (pickle)")
+            return model, preprocessor
+        except Exception as e:
+            st.warning(f"⚠️ Pickle error: {e}")
         
-        st.success("✅ Model dan preprocessor berhasil dimuat!")
-        return model, preprocessor
+        # ============================================
+        # METHOD 2: Coba joblib
+        # ============================================
+        try:
+            import joblib
+            model = joblib.load('models/model.pkl')
+            preprocessor = joblib.load('models/preprocessor.pkl')
+            st.success("✅ Model & preprocessor loaded (joblib)")
+            return model, preprocessor
+        except Exception as e:
+            st.warning(f"⚠️ Joblib error: {e}")
+        
+        # ============================================
+        # METHOD 3: Coba model_only + preprocessor terpisah
+        # ============================================
+        try:
+            with open('models/model_only.pkl', 'rb') as f:
+                model = pickle.load(f)
+            # Coba load preprocessor dengan joblib
+            import joblib
+            preprocessor = joblib.load('models/preprocessor.pkl')
+            st.success("✅ Model loaded from model_only, preprocessor from joblib")
+            return model, preprocessor
+        except Exception as e:
+            st.warning(f"⚠️ Model only error: {e}")
+        
+        # ============================================
+        # METHOD 4: Coba dengan pickle protocol 2
+        # ============================================
+        try:
+            with open('models/model.pkl', 'rb') as f:
+                model = pickle.load(f)
+            st.warning("⚠️ Preprocessor tidak bisa dimuat, prediksi mungkin error")
+            return model, None
+        except Exception as e:
+            st.warning(f"⚠️ Final attempt error: {e}")
+        
+        st.error("❌ SEMUA METODE GAGAL!")
+        return None, None
         
     except Exception as e:
-        st.error(f"❌ Error loading: {e}")
+        st.error(f"❌ Error: {e}")
         return None, None
 
 @st.cache_data
 def load_data():
+    """Load dataset dari file CSV"""
     try:
+        if not os.path.exists('emissions_high_granularity.csv'):
+            st.error("❌ File CSV tidak ditemukan!")
+            return None
         df = pd.read_csv('emissions_high_granularity.csv')
         return df
-    except:
-        st.error("❌ File CSV tidak ditemukan!")
+    except Exception as e:
+        st.error(f"❌ Error loading data: {e}")
         return None
 
 # Load semua artifacts
@@ -90,7 +140,8 @@ if page == "🏠 Home":
     st.markdown("""
     ---
     ### 📋 Tentang Aplikasi
-    Aplikasi ini digunakan untuk **memprediksi emisi karbon** perusahaan energi.
+    Aplikasi ini digunakan untuk **memprediksi emisi karbon** perusahaan energi 
+    berdasarkan data historis dari tahun **1962-2022**.
     
     ### 🎯 Tujuan
     - Menganalisis tren emisi karbon global
@@ -98,12 +149,13 @@ if page == "🏠 Home":
     - Mendukung perencanaan kebijakan **Smart City**
     
     ### 📊 Fitur Aplikasi
-    1. **📊 EDA Dashboard** - Visualisasi data emisi
-    2. **🔮 Prediction** - Prediksi emisi
-    3. **📚 Documentation** - Informasi model
+    1. **📊 EDA Dashboard** - Visualisasi interaktif data emisi
+    2. **🔮 Prediction** - Prediksi emisi berdasarkan parameter
+    3. **📚 Documentation** - Informasi model dan tim
     ---
     """)
     
+    # Statistik ringkas
     if df is not None:
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -120,10 +172,13 @@ if page == "🏠 Home":
 # ============================================
 elif page == "📊 EDA Dashboard":
     st.title("📊 EDA Dashboard")
+    st.subheader("Eksplorasi Data Emisi Karbon Interaktif")
     
     if df is None:
-        st.warning("⚠️ Data tidak tersedia.")
+        st.warning("⚠️ Data tidak tersedia. Silakan periksa file CSV.")
     else:
+        # Filter
+        st.markdown("### 🔍 Filter Data")
         col1, col2 = st.columns(2)
         with col1:
             companies = ['All'] + sorted(df['parent_entity'].unique().tolist())
@@ -132,6 +187,7 @@ elif page == "📊 EDA Dashboard":
             commodities = ['All'] + sorted(df['commodity'].unique().tolist())
             selected_commodity = st.selectbox("Pilih Komoditas", commodities)
         
+        # Filter data
         df_filtered = df.copy()
         if selected_company != 'All':
             df_filtered = df_filtered[df_filtered['parent_entity'] == selected_company]
@@ -141,24 +197,45 @@ elif page == "📊 EDA Dashboard":
         st.markdown(f"**Menampilkan {len(df_filtered):,} baris data**")
         st.markdown("---")
         
-        # Tren Emisi
+        # Visualisasi 1: Time Series
         st.subheader("📈 Tren Emisi per Tahun")
         yearly_data = df_filtered.groupby('year')['total_emissions_MtCO2e'].sum().reset_index()
-        fig1 = px.line(yearly_data, x='year', y='total_emissions_MtCO2e', markers=True)
+        fig1 = px.line(
+            yearly_data,
+            x='year', 
+            y='total_emissions_MtCO2e',
+            title='Total Emisi per Tahun',
+            labels={'year': 'Tahun', 'total_emissions_MtCO2e': 'Total Emisi (Mt CO2e)'},
+            markers=True
+        )
         fig1.update_layout(height=400)
         st.plotly_chart(fig1, use_container_width=True)
         
-        # Top Perusahaan
-        st.subheader("🏢 Top 10 Perusahaan")
-        top = df_filtered.groupby('parent_entity')['total_emissions_MtCO2e'].sum().nlargest(10).reset_index()
-        fig2 = px.bar(top, x='parent_entity', y='total_emissions_MtCO2e', color='total_emissions_MtCO2e')
+        # Visualisasi 2: Top Perusahaan
+        st.subheader("🏢 Top 10 Perusahaan dengan Emisi Tertinggi")
+        top_companies = df_filtered.groupby('parent_entity')['total_emissions_MtCO2e'].sum().nlargest(10).reset_index()
+        fig2 = px.bar(
+            top_companies,
+            x='parent_entity', 
+            y='total_emissions_MtCO2e',
+            title='Top 10 Perusahaan',
+            labels={'parent_entity': 'Perusahaan', 'total_emissions_MtCO2e': 'Total Emisi (Mt CO2e)'},
+            color='total_emissions_MtCO2e',
+            color_continuous_scale='Blues'
+        )
         fig2.update_layout(height=400)
         st.plotly_chart(fig2, use_container_width=True)
         
-        # Per Komoditas
-        st.subheader("🛢️ Distribusi per Komoditas")
-        komoditas = df_filtered.groupby('commodity')['total_emissions_MtCO2e'].sum().reset_index()
-        fig3 = px.pie(komoditas, values='total_emissions_MtCO2e', names='commodity', hole=0.3)
+        # Visualisasi 3: Emisi per Komoditas
+        st.subheader("🛢️ Distribusi Emisi per Komoditas")
+        commodity_emissions = df_filtered.groupby('commodity')['total_emissions_MtCO2e'].sum().reset_index()
+        fig3 = px.pie(
+            commodity_emissions,
+            values='total_emissions_MtCO2e', 
+            names='commodity',
+            title='Distribusi Emisi per Komoditas',
+            hole=0.3
+        )
         fig3.update_layout(height=400)
         st.plotly_chart(fig3, use_container_width=True)
 
@@ -167,18 +244,28 @@ elif page == "📊 EDA Dashboard":
 # ============================================
 elif page == "🔮 Prediction":
     st.title("🔮 Prediction")
+    st.subheader("Prediksi Emisi Karbon")
     
-    if model is None or preprocessor is None:
-        st.warning("⚠️ Model atau preprocessor tidak tersedia.")
+    if model is None:
+        st.warning("⚠️ Model tidak tersedia. Silakan periksa file model di folder 'models/'.")
+        with st.expander("📁 Cek file yang ada:"):
+            if os.path.exists('models'):
+                for file in os.listdir('models'):
+                    st.write(f"   - {file}")
+            else:
+                st.write("❌ Folder 'models' tidak ditemukan!")
     elif df is None:
-        st.warning("⚠️ Data tidak tersedia.")
+        st.warning("⚠️ Data tidak tersedia. Silakan periksa file CSV.")
     else:
-        st.markdown("### Masukkan Parameter Prediksi")
+        st.markdown("""
+        ### Masukkan Parameter Prediksi
+        Isi semua parameter di bawah ini untuk mendapatkan prediksi emisi.
+        """)
         
         col1, col2 = st.columns(2)
         
         with col1:
-            year = st.slider("📅 Tahun", 2023, 2030, 2025)
+            year = st.slider("📅 Tahun", 2023, 2030, 2025, help="Tahun yang ingin diprediksi")
             company = st.selectbox("🏢 Perusahaan", df['parent_entity'].unique())
             commodity = st.selectbox("🛢️ Komoditas", df['commodity'].unique())
         
@@ -188,6 +275,8 @@ elif page == "🔮 Prediction":
             reporting_entity = st.selectbox("📋 Entitas Pelapor", df['reporting_entity'].unique())
             production_unit = st.selectbox("📏 Unit Produksi", df['production_unit'].unique())
             source = st.text_input("📝 Sumber Data", "User Input")
+        
+        st.markdown("---")
         
         if st.button("🔮 Prediksi Sekarang", type="primary", use_container_width=True):
             # Buat input dataframe
@@ -202,27 +291,33 @@ elif page == "🔮 Prediction":
                 'source': [source]
             })
             
-            with st.spinner("⏳ Memproses..."):
+            with st.spinner("⏳ Sedang memproses prediksi..."):
                 try:
-                    # Proses input dengan preprocessor
-                    input_processed = preprocessor.transform(input_data)
+                    # Cek preprocessor
+                    if preprocessor is not None:
+                        input_processed = preprocessor.transform(input_data)
+                        prediction = model.predict(input_processed)[0]
+                    else:
+                        # Jika preprocessor None, coba prediksi langsung
+                        st.warning("⚠️ Preprocessor tidak tersedia, mencoba prediksi langsung...")
+                        prediction = model.predict(input_data)[0]
                     
-                    # Prediksi
-                    prediction = model.predict(input_processed)[0]
+                    st.success(f"✅ **Prediksi Total Emisi: {prediction:.2f} Mt CO2e**")
                     
-                    st.success(f"✅ **Prediksi Emisi: {prediction:.2f} Mt CO2e**")
-                    
+                    # Interpretasi
+                    st.subheader("📊 Interpretasi")
                     if prediction > 500:
-                        st.warning("⚠️ **Emisi TINGGI**")
+                        st.warning("⚠️ **Emisi TINGGI** - Perlu upaya reduksi signifikan!")
                         st.progress(0.9)
                     elif prediction > 200:
-                        st.info("ℹ️ **Emisi SEDANG**")
+                        st.info("ℹ️ **Emisi SEDANG** - Masih perlu perbaikan.")
                         st.progress(0.6)
                     else:
-                        st.success("✅ **Emisi RENDAH**")
+                        st.success("✅ **Emisi RENDAH** - Sudah baik, pertahankan!")
                         st.progress(0.3)
                     
-                    with st.expander("📋 Detail Input"):
+                    # Tampilkan parameter yang digunakan
+                    with st.expander("📋 Lihat Parameter yang Digunakan"):
                         st.json({
                             'year': year,
                             'company': company,
@@ -233,8 +328,10 @@ elif page == "🔮 Prediction":
                             'production_unit': production_unit,
                             'source': source
                         })
+                    
                 except Exception as e:
-                    st.error(f"❌ Error: {e}")
+                    st.error(f"❌ Error saat prediksi: {e}")
+                    st.info("💡 Pastikan semua input sudah diisi dengan benar.")
 
 # ============================================
 # PAGE 4: DOCUMENTATION
@@ -242,11 +339,13 @@ elif page == "🔮 Prediction":
 else:
     st.title("📚 Documentation")
     
+    # FOTO DI HALAMAN DOCUMENTATION
     st.markdown("### 👤 Pengembang")
+    
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         try:
-            st.image('foto profil.jpeg', width=200)
+            st.image('foto profil.jpeg', width=250)
         except:
             st.warning("⚠️ Foto tidak ditemukan")
         st.markdown("### Erdwina Nabilah Putri")
@@ -255,20 +354,23 @@ else:
     st.markdown("---")
     
     st.markdown("""
-    ### 🤖 Model
+    ### 🤖 Model yang Digunakan
     
-    **Model:** Gradient Boosting Regressor
+    **Model Terbaik:** Gradient Boosting Regressor
     
     | Metrik | Nilai |
     |--------|-------|
     | R2 Score | **0.9926** |
     | MAE | 11.03 Mt CO2e |
     | RMSE | 23.68 Mt CO2e |
+    | CV R2 | 0.9900 |
     
     ---
     
-    ### 📊 Fitur Penting
-    1. **Production Value** - Nilai produksi
+    ### 📊 Fitur Paling Penting
+    Berdasarkan analisis feature importance:
+    
+    1. **Production Value** - Nilai produksi (paling dominan)
     2. **Commodity** - Jenis komoditas
     3. **Year** - Tahun
     4. **Parent Entity** - Perusahaan
@@ -276,25 +378,27 @@ else:
     ---
     
     ### 📁 Sumber Data
-    - **Sumber:** Climate Accountability Institute
+    - **Sumber:** Climate Accountability Institute (CAI)
     - **Periode:** 1962-2022
-    - **Data:** 15,797 baris
+    - **Jumlah Data:** 15,797 baris
     
     ---
     
-    ### 🛠️ Tools
+    ### 🛠️ Tools yang Digunakan
     - Python, Pandas, NumPy
-    - Scikit-learn, Gradient Boosting
+    - Scikit-learn, XGBoost, Gradient Boosting
     - Streamlit, Plotly
+    - SHAP (Interpretability)
     
     ---
     
     ### 📌 GWE 2026
-    Tema: **Forecasting + Smart City**
+    Proyek ini dibuat untuk **GWE 2026 Data Science Challenge**
+    dengan tema **Forecasting + Smart City**.
     """)
 
 # ============================================
 # FOOTER
 # ============================================
 st.sidebar.markdown("---")
-st.sidebar.caption("🌍 GWE 2026")
+st.sidebar.caption("🌍 GWE 2026 Data Science Challenge")
